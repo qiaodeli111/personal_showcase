@@ -24,7 +24,7 @@ spec:
         app: backend-deploy
     spec:
       containers:
-      - image: qiaodeli111/showcase_backend:0c4f426
+      - image: qiaodeli111/showcase_backend:1.4.0
         name: backend
         resources: 
           requests:

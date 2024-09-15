@@ -24,7 +24,7 @@ spec:
         app: frontend-deploy
     spec:
       containers:
-      - image: qiaodeli111/showcase_frontend:0c4f426
+      - image: qiaodeli111/showcase_frontend:1.4.0
         name: frontend
         resources: 
           requests:
