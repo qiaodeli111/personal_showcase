@@ -1,4 +1,4 @@
-# .github/workflows/merge-main.yml
+# .github/workflows/merge_main.yml
 name: Main Branch Merge Workflow
 
 permissions:
@@ -12,7 +12,7 @@ on:
 
 jobs:
   check_commit_info:
-    if: github.event.pull_request.merged == 'true'
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     
     steps:
@@ -45,19 +45,27 @@ jobs:
 
     - name: Bump version
       id: bump_version
-      uses: mathieudutour/github-tag-action@v6.2
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        tag_prefix: ''
-        custom_tag: ''
-        create_annotated_tag: true
+      run: |
+        last_tag=$(git describe --tags $(git rev-list --tags --max-count=1) 2>/dev/null || echo "0.0.0")
+        if [[ "$last_tag" == "0.0.0" ]]; then
+          new_tag="1.0.0"
+        else
+          IFS='.' read -r -a version <<< "$last_tag"
+          major="${version[0]}"
+          minor="${version[1]}"
+          patch="${version[2]}"
+          new_tag="${major}.$((minor+1)).0"
+        fi
+        echo "new_tag=$new_tag" >> $GITHUB_ENV
     
-    - name: Extract new tag
-      id: extract_tag
-      run: echo "new_tag=$(git describe --tags --abbrev=0)" >> $GITHUB_ENV
-    
-    outputs:
-      NEW_TAG: ${{ env.new_tag }}
+    - name: Create new tag
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        git config --global user.name 'github-actions'
+        git config --global user.email 'github-actions@github.com'
+        git tag ${{ env.new_tag }}
+        git push origin ${{ env.new_tag }}
 
   build_and_push:
     needs: version_bump
@@ -87,8 +95,7 @@ jobs:
       with:
         file: ./${{ matrix.service }}/Dockerfile
         push: true
-        # 这里从 version_bump job 的输出中获取新标签
-        tags: ${{ secrets.DOCKER_USERNAME }}/showcase_${{ matrix.service }}:${{ needs.version_bump.outputs.NEW_TAG }}
+        tags: ${{ secrets.DOCKER_USERNAME }}/showcase_${{ matrix.service }}:${{ env.new_tag }}
         context: ./${{ matrix.service }}
     
   update_manifest:
@@ -105,19 +112,19 @@ jobs:
     - name: Generate Kubernetes manifest for backend
       run: |
         chmod +x deployment/kubernetes/templates/generate-manifest.sh
-        deployment/kubernetes/templates/generate-manifest.sh -n ${{ matrix.namespace }} -a backend -i ${{ secrets.DOCKER_USERNAME }}/showcase_backend -t ${{ needs.version_bump.outputs.NEW_TAG }}
+        deployment/kubernetes/templates/generate-manifest.sh -n ${{ matrix.namespace }} -a backend -i ${{ secrets.DOCKER_USERNAME }}/showcase_backend -t ${{ env.new_tag }}
     
     - name: Generate Kubernetes manifest for frontend
       run: |
         chmod +x deployment/kubernetes/templates/generate-manifest.sh
-        deployment/kubernetes/templates/generate-manifest.sh -n ${{ matrix.namespace }} -a frontend -i ${{ secrets.DOCKER_USERNAME }}/showcase_frontend -t ${{ needs.version_bump.outputs.NEW_TAG }}
+        deployment/kubernetes/templates/generate-manifest.sh -n ${{ matrix.namespace }} -a frontend -i ${{ secrets.DOCKER_USERNAME }}/showcase_frontend -t ${{ env.new_tag }}
     
     - name: Generate nginx deployment docker-compose file
       run: |
         chmod +x deployment/kubernetes/templates/generate-docker-compose.sh
-        deployment/kubernetes/templates/generate-docker-compose.sh -n ${{ matrix.namespace }} -a nginx -i ${{ secrets.DOCKER_USERNAME }}/showcase_nginx -t ${{ needs.version_bump.outputs.NEW_TAG }}
+        deployment/kubernetes/templates/generate-docker-compose.sh -n ${{ matrix.namespace }} -a nginx -i ${{ secrets.DOCKER_USERNAME }}/showcase_nginx -t ${{ env.new_tag }}
     
-    - name: Commit and push manifest and tag
+    - name: Commit and push manifest
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
@@ -126,5 +133,4 @@ jobs:
         git add deployment/kubernetes/${{ matrix.namespace }}/*.yaml
         git add deployment/local_testing/*
         git commit -m "Updating K8s manifest files for ${{ matrix.namespace }} [skip ci]"
-        git tag ${{ needs.version_bump.outputs.NEW_TAG }}
-        git push origin main --follow-tags
+        git push

@@ -24,8 +24,8 @@ spec:
         app: backend-deploy
     spec:
       containers:
-      - image: qiaodeli111/showcase_backend:2513ed3
-        name: backend
+      - image: qiaodeli111/showcase_backend:99fef67
+        name: showcase-backend
         resources: 
           requests:
             cpu: 100m

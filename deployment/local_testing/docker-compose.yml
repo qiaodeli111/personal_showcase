@@ -2,19 +2,19 @@ version: "3.9"
 
 services:
   backend:
-    image: showcase_backend:latest
+    image: qiaodeli111/showcase_backend:99fef67
     container_name: backend
     networks:
       - showcase
 
   frontend:
-    image: showcase_frontend:latest
+    image: qiaodeli111/showcase_frontend:99fef67
     container_name: frontend
     networks:
       - showcase
       
   nginx:
-    image: showcase_nginx:latest
+    image: qiaodeli111/showcase_nginx:99fef67
     container_name: nginx
     ports:
       - "9080:80"
