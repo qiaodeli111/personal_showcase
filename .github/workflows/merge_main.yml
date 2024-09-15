@@ -65,7 +65,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        namespace: [dev, production]
+        namespace: [production]
     
     steps:
     - name: Checkout code
