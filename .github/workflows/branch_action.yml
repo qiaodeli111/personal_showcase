@@ -3,7 +3,7 @@ name: Branch Push Workflow
 
 on:
   push:
-    branches-ignore: ['master'] # 忽略主序列的推送，只触发分支的推送
+    branches-ignore: ['main'] # 忽略主序列的推送，只触发分支的推送
 
 jobs:
   build-and-push:
@@ -38,6 +38,6 @@ jobs:
       with:
         file: ./${{ matrix.service }}/Dockerfile
         push: true
-        tags: ${{ secrets.DOCKER_USERNAME }}/showcase_${{ matrix.service }}:${{ steps.tag_version.outputs.new_tag }}
+        tags: ${{ secrets.DOCKER_USERNAME }}/showcase_${{ matrix.service }}:${{ steps.extract_sha.outputs.sha_short }}
         context: ./${{ matrix.service }}
     
