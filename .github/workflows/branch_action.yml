@@ -28,6 +28,8 @@ jobs:
       run: |
         if [[ "${{ steps.get_commit_message.outputs.message }}" =~ "Updating K8s manifest files" ]]; then
           exit 0
+        else
+          echo "::set-output name=is_k8s_manifest_update::false"
     
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v3
