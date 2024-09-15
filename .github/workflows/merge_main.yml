@@ -21,7 +21,7 @@ jobs:
     
     - name: Get merge commit message
       id: get_commit_message
-      run: echo "message=$(git log -1 --pretty=%B)" >> $GITHUB_ENV
+      run: echo "message=$(git log --pretty=format:%s ${GITHUB_BASE_REF}..${GITHUB_HEAD_REF})" >> $GITHUB_ENV
     
     - name: Check commit message for version bump
       id: check_commit_message
