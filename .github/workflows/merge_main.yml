@@ -61,7 +61,7 @@ jobs:
         context: ./${{ matrix.service }}
     
   update_manifest:
-    needs: build_and_push
+    needs: [version_bump, build_and_push]
     runs-on: ubuntu-latest
     strategy:
       matrix:
