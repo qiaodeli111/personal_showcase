@@ -25,11 +25,9 @@ jobs:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         default_bump: minor
         tag_prefix: ''
-        custom_tag: ''
-        create_annotated_tag: true
     
     outputs:
-      NEW_TAG: ${{ steps.tag_version.outputs.new_tag }}
+      NEW_TAG: ${{ steps.bump_version.outputs.new_tag }}
 
   build_and_push:
     needs: version_bump

@@ -1,123 +1,103 @@
-# .github/workflows/merge-main.yml
-name: Main Branch Merge Workflow
+# .github/workflows/branch-push.yml
+name: Branch Push Workflow
 
 permissions:
   contents: write
 
 on:
-  pull_request:
-    types: [closed]
-    branches:
-      - main
+  push:
+    branches-ignore: ['main'] # 忽略主序列的推送，只触发分支的推送
 
 jobs:
-  check_commit_info:
-    if: github.event.pull_request.merged == 'true'
+  check_code:
     runs-on: ubuntu-latest
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
     
-    - name: Get merge commit message
+    - name: Set up Git for current commit
       id: get_commit_message
       run: echo "message=$(git log -1 --pretty=%B)" >> $GITHUB_ENV
     
-    - name: Check commit message for version bump
-      id: check_commit_message
+    - name: Detect if this is related to K8s manifests update
+      id: k8s_manifest_update
       run: |
-        if [[ "${{ env.message }}" =~ ^(fix|feat|perf|chore|docs|style|refactor|test|build): ]]; then
-          echo "VERSION_BUMP=true" >> $GITHUB_ENV
+        if [[ "${{ env.message }}" =~ "Updating K8s manifest files" ]]; then
+          echo "IS_K8S_MANIFEST_UPDATE=true" >> $GITHUB_ENV
         else
-          echo "VERSION_BUMP=false" >> $GITHUB_ENV
+          echo "IS_K8S_MANIFEST_UPDATE=false" >> $GITHUB_ENV
+        fi
     
     outputs:
-      VERSION_BUMP: ${{ env.VERSION_BUMP }}
-
-  version_bump:
-    needs: check_commit_info
-    if: needs.check_commit_info.outputs.VERSION_BUMP == 'true'
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Bump version
-      id: bump_version
-      uses: mathieudutour/github-tag-action@v6.2
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        tag_prefix: ''
-        custom_tag: ''
-        create_annotated_tag: true
-    
-    - name: Extract new tag
-      id: extract_tag
-      run: echo "new_tag=$(git describe --tags --abbrev=0)" >> $GITHUB_ENV
-    
-    outputs:
-      NEW_TAG: ${{ env.new_tag }}
-
+      IS_K8S_MANIFEST_UPDATE: ${{ env.IS_K8S_MANIFEST_UPDATE }}
+  
   build_and_push:
-    needs: version_bump
+    needs: check_code  # Ensure this job runs after check_code job
+    if: needs.check_code.outputs.IS_K8S_MANIFEST_UPDATE == 'false'
     runs-on: ubuntu-latest
     strategy:
       matrix:
         service: [frontend, backend, nginx]
-    
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-    
+
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v3
-    
+
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
-    
+
     - name: Log in to Docker Hub
       uses: docker/login-action@v3
       with:
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_PASSWORD }}
-    
+
+    - name: Extract short SHA
+      id: extract_sha
+      run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
     - name: Build and Push the images
       uses: docker/build-push-action@v2
       with:
         file: ./${{ matrix.service }}/Dockerfile
         push: true
-        # 这里从 version_bump job 的输出中获取新标签
-        tags: ${{ secrets.DOCKER_USERNAME }}/showcase_${{ matrix.service }}:${{ needs.version_bump.outputs.NEW_TAG }}
+        tags: ${{ secrets.DOCKER_USERNAME }}/showcase_${{ matrix.service }}:${{ env.sha_short }}
         context: ./${{ matrix.service }}
     
   update_manifest:
-    needs: build_and_push
+    needs: [check_code, build_and_push]  # Ensure this job runs after check_code job
+    if: needs.check_code.outputs.IS_K8S_MANIFEST_UPDATE == 'false'
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        namespace: [dev, production]
-    
+        namespace: [dev]
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-    
+
+    - name: Extract short SHA
+      id: extract_sha
+      run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
     - name: Generate Kubernetes manifest for backend
       run: |
         chmod +x deployment/kubernetes/templates/generate-manifest.sh
-        deployment/kubernetes/templates/generate-manifest.sh -n ${{ matrix.namespace }} -a backend -i ${{ secrets.DOCKER_USERNAME }}/showcase_backend -t ${{ needs.version_bump.outputs.NEW_TAG }}
-    
+        deployment/kubernetes/templates/generate-manifest.sh -n ${{ matrix.namespace }} -a backend -i ${{ secrets.DOCKER_USERNAME }}/showcase_backend -t ${{ env.sha_short }}
+
     - name: Generate Kubernetes manifest for frontend
       run: |
         chmod +x deployment/kubernetes/templates/generate-manifest.sh
-        deployment/kubernetes/templates/generate-manifest.sh -n ${{ matrix.namespace }} -a frontend -i ${{ secrets.DOCKER_USERNAME }}/showcase_frontend -t ${{ needs.version_bump.outputs.NEW_TAG }}
-    
+        deployment/kubernetes/templates/generate-manifest.sh -n ${{ matrix.namespace }} -a frontend -i ${{ secrets.DOCKER_USERNAME }}/showcase_frontend -t ${{ env.sha_short }}
+
     - name: Generate nginx deployment docker-compose file
       run: |
         chmod +x deployment/kubernetes/templates/generate-docker-compose.sh
-        deployment/kubernetes/templates/generate-docker-compose.sh -n ${{ matrix.namespace }} -a nginx -i ${{ secrets.DOCKER_USERNAME }}/showcase_nginx -t ${{ needs.version_bump.outputs.NEW_TAG }}
+        deployment/kubernetes/templates/generate-docker-compose.sh -n ${{ matrix.namespace }} -a nginx -i ${{ secrets.DOCKER_USERNAME }}/showcase_nginx -t ${{ env.sha_short }}
     
-    - name: Commit and push manifest and tag
+    - name: Commit and push manifest
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
@@ -125,6 +105,5 @@ jobs:
         git config --global user.email 'github-actions@github.com'
         git add deployment/kubernetes/${{ matrix.namespace }}/*.yaml
         git add deployment/local_testing/*
-        git commit -m "Updating K8s manifest files for ${{ matrix.namespace }} [skip ci]"
-        git tag ${{ needs.version_bump.outputs.NEW_TAG }}
-        git push origin main --follow-tags
+        git commit -m "Updating K8s manifest files for ${{ matrix.namespace }}"
+        git push
