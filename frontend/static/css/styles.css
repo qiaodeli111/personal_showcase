@@ -1,0 +1,48 @@
+/* frontend/static/css/styles.css */
+body {
+    background-color: #f8f9fa;
+}
+
+.card {
+    border: none;
+    border-radius: 15px;
+    overflow: hidden;
+    transition: transform 0.3s, box-shadow 0.3s;
+}
+
+.link-card {
+    height: 200px; /* 增加卡片高度 */
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+    color: white;
+    text-decoration: none;
+}
+
+.link-card .card-img {
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.3s;
+}
+
+.link-card:hover {
+    transform: translateY(-10px);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+}
+
+.link-card:hover .card-img {
+    transform: scale(1.05);
+}
+
+.card-img-overlay {
+    background: rgba(0, 0, 0, 0.4);
+}
+
+.card-title {
+    font-size: 1.5rem;
+    font-weight: bold;
+}
+
+.card-text {
+    font-size: 1rem;
+}

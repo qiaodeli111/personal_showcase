@@ -1,0 +1,26 @@
+# Create namespace: dev
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dev
+
+---
+
+# Create deployment of backend service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-deploy
+  namespace: dev
+  labels:
+    app: backend-deploy
+  selector:
+    matchLabels:
+      app: backend
+  replicas: 3
+  template:
+    metadata:
+      labels: 
+        app: backend
+      containers:
+      - name: 

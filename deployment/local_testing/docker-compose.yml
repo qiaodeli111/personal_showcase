@@ -1,0 +1,25 @@
+version: "3.9"
+
+services:
+  backend:
+    image: showcase_backend:latest
+    container_name: backend
+    networks:
+      - showcase
+
+  frontend:
+    image: showcase_frontend:latest
+    container_name: frontend
+    networks:
+      - showcase
+      
+  nginx:
+    image: showcase_nginx:latest
+    container_name: nginx
+    ports:
+      - "9080:80"
+    networks:
+      - showcase
+
+networks:
+  showcase:
