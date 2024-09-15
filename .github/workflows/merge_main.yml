@@ -1,4 +1,4 @@
-# .github/workflows/merge_main.yml
+# .github/workflows/merge-main.yml
 name: Main Branch Merge Workflow
 
 permissions:
@@ -11,34 +11,7 @@ on:
       - main
 
 jobs:
-  check_commit_info:
-    if: github.event.pull_request.merged == true
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-    
-    - name: Get merge commit message
-      id: get_commit_message
-      run: echo "message=$(git log --pretty=format:%s ${GITHUB_BASE_REF}..${GITHUB_HEAD_REF})" >> $GITHUB_ENV
-    
-    - name: Check commit message for version bump
-      id: check_commit_message
-      run: |
-        if [[ "${{ env.message }}" =~ ^(fix|feat|perf|chore|docs|style|refactor|test|build): ]]; then
-          echo "VERSION_BUMP=true" >> $GITHUB_ENV
-        else
-          echo "VERSION_BUMP=false" >> $GITHUB_ENV
-    
-    outputs:
-      VERSION_BUMP: ${{ env.VERSION_BUMP }}
-
   version_bump:
-    needs: check_commit_info
-    if: needs.check_commit_info.outputs.VERSION_BUMP == 'true'
     runs-on: ubuntu-latest
     
     steps:
@@ -47,27 +20,16 @@ jobs:
 
     - name: Bump version
       id: bump_version
-      run: |
-        last_tag=$(git describe --tags $(git rev-list --tags --max-count=1) 2>/dev/null || echo "0.0.0")
-        if [[ "$last_tag" == "0.0.0" ]]; then
-          new_tag="1.0.0"
-        else
-          IFS='.' read -r -a version <<< "$last_tag"
-          major="${version[0]}"
-          minor="${version[1]}"
-          patch="${version[2]}"
-          new_tag="${major}.$((minor+1)).0"
-        fi
-        echo "new_tag=$new_tag" >> $GITHUB_ENV
+      uses: mathieudutour/github-tag-action@v6.2
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        default_bump: minor
+        tag_prefix: ''
+        custom_tag: ''
+        create_annotated_tag: true
     
-    - name: Create new tag
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        git config --global user.name 'github-actions'
-        git config --global user.email 'github-actions@github.com'
-        git tag ${{ env.new_tag }}
-        git push origin ${{ env.new_tag }}
+    outputs:
+      NEW_TAG: ${{ steps.tag_version.outputs.new_tag }}
 
   build_and_push:
     needs: version_bump
@@ -97,7 +59,7 @@ jobs:
       with:
         file: ./${{ matrix.service }}/Dockerfile
         push: true
-        tags: ${{ secrets.DOCKER_USERNAME }}/showcase_${{ matrix.service }}:${{ env.new_tag }}
+        tags: ${{ secrets.DOCKER_USERNAME }}/showcase_${{ matrix.service }}:${{ needs.version_bump.outputs.NEW_TAG }}
         context: ./${{ matrix.service }}
     
   update_manifest:
@@ -110,23 +72,23 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-    
+
     - name: Generate Kubernetes manifest for backend
       run: |
         chmod +x deployment/kubernetes/templates/generate-manifest.sh
-        deployment/kubernetes/templates/generate-manifest.sh -n ${{ matrix.namespace }} -a backend -i ${{ secrets.DOCKER_USERNAME }}/showcase_backend -t ${{ env.new_tag }}
+        deployment/kubernetes/templates/generate-manifest.sh -n ${{ matrix.namespace }} -a backend -i ${{ secrets.DOCKER_USERNAME }}/showcase_backend -t ${{ needs.version_bump.outputs.NEW_TAG }}
     
     - name: Generate Kubernetes manifest for frontend
       run: |
         chmod +x deployment/kubernetes/templates/generate-manifest.sh
-        deployment/kubernetes/templates/generate-manifest.sh -n ${{ matrix.namespace }} -a frontend -i ${{ secrets.DOCKER_USERNAME }}/showcase_frontend -t ${{ env.new_tag }}
+        deployment/kubernetes/templates/generate-manifest.sh -n ${{ matrix.namespace }} -a frontend -i ${{ secrets.DOCKER_USERNAME }}/showcase_frontend -t ${{ needs.version_bump.outputs.NEW_TAG }}
     
     - name: Generate nginx deployment docker-compose file
       run: |
         chmod +x deployment/kubernetes/templates/generate-docker-compose.sh
-        deployment/kubernetes/templates/generate-docker-compose.sh -n ${{ matrix.namespace }} -a nginx -i ${{ secrets.DOCKER_USERNAME }}/showcase_nginx -t ${{ env.new_tag }}
+        deployment/kubernetes/templates/generate-docker-compose.sh -n ${{ matrix.namespace }} -a nginx -i ${{ secrets.DOCKER_USERNAME }}/showcase_nginx -t ${{ needs.version_bump.outputs.NEW_TAG }}
     
-    - name: Commit and push manifest
+    - name: Commit and push manifest and tag
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
@@ -135,4 +97,5 @@ jobs:
         git add deployment/kubernetes/${{ matrix.namespace }}/*.yaml
         git add deployment/local_testing/*
         git commit -m "Updating K8s manifest files for ${{ matrix.namespace }} [skip ci]"
-        git push
+        git tag ${{ needs.version_bump.outputs.NEW_TAG }}
+        git push origin main --follow-tags
