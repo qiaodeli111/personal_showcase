@@ -1,36 +1,48 @@
 # .github/workflows/branch-push.yml
 name: Branch Push Workflow
 
+permissions:
+  contents: write
+
 on:
   push:
     branches-ignore: ['main'] # 忽略主序列的推送，只触发分支的推送
 
 jobs:
-  build-and-push:
+  check_code:
     runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        service: [frontend, backend, nginx]
-        k8s_deliver: [frontend, backend]
-        namespace: [dev]
-
+    
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
     
     - name: Set up Git for current commit
       id: get_commit_message
-      run: echo "::set-output name=message::$(git log -1 --pretty=%B)"
+      run: echo "message=$(git log -1 --pretty=%B)" >> $GITHUB_ENV
     
     - name: Detect if this is related to K8s manifests update
       id: k8s_manifest_update
       run: |
-        if [[ "${{ steps.get_commit_message.outputs.message }}" =~ "Updating K8s manifest files" ]]; then
-          exit 0
+        if [[ "${{ env.message }}" =~ "Updating K8s manifest files" ]]; then
+          echo "IS_K8S_MANIFEST_UPDATE=true" >> $GITHUB_ENV
         else
-          echo "::set-output name=is_k8s_manifest_update::false"
+          echo "IS_K8S_MANIFEST_UPDATE=false" >> $GITHUB_ENV
+        fi
     
+    outputs:
+      IS_K8S_MANIFEST_UPDATE: ${{ env.IS_K8S_MANIFEST_UPDATE }}
+  
+  build_and_push:
+    needs: check_code  # Ensure this job runs after check_code job
+    if: needs.check_code.outputs.IS_K8S_MANIFEST_UPDATE == 'false'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [frontend, backend, nginx]
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v3
 
@@ -45,25 +57,45 @@ jobs:
 
     - name: Extract short SHA
       id: extract_sha
-      run: echo "::set-output name=sha_short::$(git rev-parse --short HEAD)"
+      run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
     - name: Build and Push the images
       uses: docker/build-push-action@v2
       with:
         file: ./${{ matrix.service }}/Dockerfile
         push: true
-        tags: ${{ secrets.DOCKER_USERNAME }}/showcase_${{ matrix.service }}:${{ steps.extract_sha.outputs.sha_short }}
+        tags: ${{ secrets.DOCKER_USERNAME }}/showcase_${{ matrix.service }}:${{ env.sha_short }}
         context: ./${{ matrix.service }}
     
-    - name: Generate Kubernetes manifest
+  update_manifest:
+    needs: [check_code, build_and_push]  # Ensure this job runs after check_code job
+    if: needs.check_code.outputs.IS_K8S_MANIFEST_UPDATE == 'false'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        namespace: [dev]
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Extract short SHA
+      id: extract_sha
+      run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
+    - name: Generate Kubernetes manifest for backend
       run: |
         chmod +x deployment/kubernetes/templates/generate-manifest.sh
-        deployment/kubernetes/templates/generate-manifest.sh -n ${{ matrix.namespace }} -a ${{ matrix.k8s_deliver }} -i ${{ secrets.DOCKER_USERNAME }}/showcase_${{ matrix.k8s_deliver }} -t ${{ steps.extract_sha.outputs.sha_short }}
+        deployment/kubernetes/templates/generate-manifest.sh -n ${{ matrix.namespace }} -a backend -i ${{ secrets.DOCKER_USERNAME }}/showcase_backend -t ${{ env.sha_short }}
+
+    - name: Generate Kubernetes manifest for frontend
+      run: |
+        chmod +x deployment/kubernetes/templates/generate-manifest.sh
+        deployment/kubernetes/templates/generate-manifest.sh -n ${{ matrix.namespace }} -a frontend -i ${{ secrets.DOCKER_USERNAME }}/showcase_frontend -t ${{ env.sha_short }}
 
     - name: Generate nginx deployment docker-compose file
       run: |
-        chmod +x deployment/kubernetes/templates/generate-manifest.sh
-        deployment/kubernetes/templates/generate-manifest.sh -n ${{ matrix.namespace }} -a nginx -i ${{ secrets.DOCKER_USERNAME }}/showcase_nginx -t ${{ steps.extract_sha.outputs.sha_short }}
+        chmod +x deployment/kubernetes/templates/generate-docker-compose.sh
+        deployment/kubernetes/templates/generate-docker-compose.sh -n ${{ matrix.namespace }} -a nginx -i ${{ secrets.DOCKER_USERNAME }}/showcase_nginx -t ${{ env.sha_short }}
     
     - name: Commit and push manifest
       env:
@@ -72,5 +104,6 @@ jobs:
         git config --global user.name 'github-actions'
         git config --global user.email 'github-actions@github.com'
         git add deployment/kubernetes/${{ matrix.namespace }}/*.yaml
+        git add deployment/local_testing/*
         git commit -m "Updating K8s manifest files for ${{ matrix.namespace }}"
         git push
