@@ -39,14 +39,16 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: backend-service
+  name: backend
   namespace: dev
   labels:
     app: backend-service
 spec:
+  type: NodePort
   ports:
   - port: 5000
     targetPort: 5000
     protocol: TCP
+    nodePort: 30007
   selector:
     app: backend-deploy

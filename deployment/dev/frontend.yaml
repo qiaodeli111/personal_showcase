@@ -35,7 +35,7 @@ spec:
             memory: 256Mi
 
 ---
-# Create service to expose backend deployment
+# Create service to expose frontend deployment
 apiVersion: v1
 kind: Service
 metadata:
@@ -45,8 +45,8 @@ metadata:
     app: frontend-service
 spec:
   ports:
-  - port: 5000
-    targetPort: 5000
+  - port: 80
+    targetPort: 80
     protocol: TCP
   selector:
     app: frontend-deploy
